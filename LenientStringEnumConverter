@@ -1,0 +1,119 @@
+﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace Newtonsoft.Json.Converters
+{
+    public class LenientStringEnumConverter<T> : LenientStringEnumConverter
+    {
+        public LenientStringEnumConverter() : this(false, default(T))
+        {
+        }
+
+        // Constructor for JsonConverterAttribute usage
+        public LenientStringEnumConverter(bool camelCaseText, T defaultValue) : base(camelCaseText)
+        {
+            DefaultValue = defaultValue;
+        }
+
+        public T DefaultValue { get; set; }
+
+        protected override object GetDefaultValue(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+        {
+            return DefaultValue;
+        }
+
+        public override bool CanConvert(Type objectType)
+        {
+            //no inheritance to handle, type should either be an enum/nullable enum.
+            return objectType == typeof(T);
+        }
+
+    }
+
+    /// <summary>
+    /// Converts an <see cref="Enum"/> to and from its name string value. 
+    /// For the deserialisation, the default value of the enum is returned when the convertion fails.
+    /// </summary>
+    public class LenientStringEnumConverter : StringEnumConverter
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="LenientStringEnumConverter"/> class.
+        /// </summary>
+        public LenientStringEnumConverter() : this(false)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="LenientStringEnumConverter"/> class.
+        /// </summary>
+        /// <param name="camelCaseText"><c>true</c> if the written enum text will be camel case; otherwise, <c>false</c>.</param>
+        public LenientStringEnumConverter(bool camelCaseText)
+        : base(camelCaseText)
+        {
+        }
+
+        protected virtual object GetDefaultValue(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+        {
+            // gives the existing or default value of the object that will ultimately be replaced with the value returned from the ReadJson method
+            return existingValue;
+        }
+
+        /// <summary>
+        /// Reads the JSON representation of the object.
+        /// </summary>
+        /// <param name="reader">The <see cref="JsonReader"/> to read from.</param>
+        /// <param name="objectType">Type of the object.</param>
+        /// <param name="existingValue">The existing value of object being read.</param>
+        /// <param name="serializer">The calling serializer.</param>
+        /// <returns>The object value.</returns>
+        public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+        {
+
+            if (reader.TokenType == JsonToken.Null)
+            {
+                return GetDefaultValue(reader, objectType, existingValue, serializer);
+            }
+
+            if (reader.TokenType == JsonToken.String)
+            {
+                if (string.IsNullOrWhiteSpace(reader.Value.ToString()))
+                {
+                    return GetDefaultValue(reader, objectType, existingValue, serializer);
+                }
+
+                try
+                {
+                    var result = base.ReadJson(reader, objectType, existingValue, serializer);
+                    return result;
+                }
+                catch (JsonSerializationException ex) when (ex.InnerException is ArgumentException) //assuming an Enum.Parse exception
+                {
+                    return GetDefaultValue(reader, objectType, existingValue, serializer);
+                }
+            }
+
+            if (reader.TokenType == JsonToken.Integer && AllowIntegerValues)
+            {
+                // the NumberStyle matches the one used internally by Json.NET 
+                if (!Int32.TryParse(reader.Value.ToString(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var _))
+                {
+                    return GetDefaultValue(reader, objectType, existingValue, serializer);
+                }
+            }
+
+            // for any other paths where exceptions are not supposed to be handled
+            return base.ReadJson(reader, objectType, existingValue, serializer);
+        }
+
+        public override bool CanConvert(Type objectType)
+        {
+            var result = base.CanConvert(objectType);
+            return result;
+        }
+    }
+}
